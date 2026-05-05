@@ -113,8 +113,15 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
     } catch { }
   }, []);
 
-  useEffect(() => { fetchData(); const id = setInterval(fetchData, 2000); return () => clearInterval(id); }, [fetchData]);
-  useEffect(() => { if (selected) { const u = payments.find(p => pid(p) === pid(selected)); if (u) setSelected(u); } }, [payments]);
+  useEffect(() => { fetchData(); const id = setInterval(fetchData, 5000); return () => clearInterval(id); }, []);
+  useEffect(() => {
+    if (selected) {
+      const u = payments.find(p => pid(p) === pid(selected));
+      if (u && JSON.stringify(u) !== JSON.stringify(selected)) {
+        setSelected(u);
+      }
+    }
+  }, [payments, selected]);
 
   const handlePay = async (e: React.FormEvent) => {
     e.preventDefault();
