@@ -27,9 +27,24 @@
   --shadow: 0 4px 24px rgba(0,0,0,0.4);
   --font: 'Inter', -apple-system, sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --bg-code: #0a0a0f;
 }
 
 html { font-size: 15px; }
+
+[data-theme="light"] {
+  --bg: #f4f5f9;
+  --bg-card: #ffffff;
+  --bg-card-hover: #eeeef6;
+  --bg-surface: rgba(220, 220, 235, 0.5);
+  --border: #e0e0eb;
+  --border-hover: #c4c4d8;
+  --text: #1a1a2e;
+  --text-dim: #4a4a65;
+  --text-muted: #8080a0;
+  --shadow: 0 4px 24px rgba(0,0,0,0.10);
+  --bg-code: #eeeef6;
+}
 body {
   font-family: var(--font);
   background: var(--bg);
@@ -170,6 +185,18 @@ body {
 /* Footer */
 .footer { margin-top: 3rem; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.6rem; color: var(--text-muted); padding-top: 1rem; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 0.5rem; }
 
+/* Theme toggle */
+.btn-theme-toggle { background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 0.35rem 0.5rem; border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center; transition: all 0.2s; }
+.btn-theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); }
+.pag-btn { background: none; border: 1px solid var(--border); color: var(--text-dim); font-family: var(--mono); font-size: 0.65rem; padding: 0.3rem 0.8rem; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; }
+.pag-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pag-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.pag-info { font-family: var(--mono); font-size: 0.65rem; color: var(--text-dim); }
+.pag-count { color: var(--text-muted); }
+
 /* Spinner */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner { animation: spin 1s linear infinite; }
@@ -216,7 +243,7 @@ body {
 
 .sim-log {
   margin-top: 0.75rem;
-  background: #0a0a0f;
+  background: var(--bg-code);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.6rem 0.8rem;

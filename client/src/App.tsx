@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, RefreshCcw, CheckCircle2, ArrowRight, ShieldCheck, Zap, Activity,
   History, AlertCircle, X, Wifi, WifiOff, Loader2, LogIn, UserPlus, Mail, Lock, User,
-  Play, Layers, GitBranch, Cpu, Server, RotateCcw as RotateCcwIcon, Webhook
+  Play, Layers, GitBranch, Cpu, Server, RotateCcw as RotateCcwIcon, Webhook, Moon, Sun
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Payment, SystemStats, WebhookLogEntry, AuthUser } from './types';
@@ -11,6 +11,18 @@ import { apiFetch, apiLogin, apiRegister, apiLogout, getStoredUser, getAccessTok
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(getStoredUser());
   const [checking, setChecking] = useState(true);
+  const [darkMode, setDarkMode] = useState(() => {
+    const stored = localStorage.getItem('nexuspay-theme');
+    const isDark = stored !== 'light';
+    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    return isDark;
+  });
+  const toggleDark = () => setDarkMode(d => {
+    const next = !d;
+    document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light');
+    localStorage.setItem('nexuspay-theme', next ? 'dark' : 'light');
+    return next;
+  });
 
   // Verify token on mount
   useEffect(() => {
@@ -26,7 +38,7 @@ export default function App() {
 
   if (checking) return <div className="loading-page"><Loader2 size={18} className="spinner" /> Verifying session...</div>;
   if (!user) return <AuthPage onAuth={setUser} />;
-  return <Dashboard user={user} onLogout={handleLogout} />;
+  return <Dashboard user={user} onLogout={handleLogout} darkMode={darkMode} toggleDark={toggleDark} />;
 }
 
 // ===== AUTH PAGE =====
@@ -93,7 +105,7 @@ function AuthPage({ onAuth }: { onAuth: (u: AuthUser) => void }) {
 }
 
 // ===== DASHBOARD =====
-function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
+function Dashboard({ user, onLogout, darkMode, toggleDark }: { user: AuthUser; onLogout: () => void; darkMode: boolean; toggleDark: () => void }) {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [webhooks, setWebhooks] = useState<WebhookLogEntry[]>([]);
@@ -102,6 +114,9 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState<Payment | null>(null);
   const [tab, setTab] = useState<'payments' | 'webhooks' | 'simulate'>('payments');
+  const [txPage, setTxPage] = useState(1);
+  const [whPage, setWhPage] = useState(1);
+  const PER_PAGE = 10;
 
   const fetchData = useCallback(async () => {
     try {
@@ -178,6 +193,9 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
         </div>
         <div className="header-right">
           <div className="header-user"><div style={{ color: 'var(--text-dim)' }}>{user.name}</div><div style={{ fontSize: '0.6rem' }}>{user.email}</div></div>
+          <button className="btn-theme-toggle" onClick={toggleDark} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
           <button className="btn-logout" onClick={onLogout}>Logout</button>
         </div>
       </header>
@@ -205,7 +223,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
           <div className="table-header"><h2 className="table-title">Webhook Log</h2></div>
           <div className="wh-cols"><div>Payment</div><div>Event</div><div>Result</div><div>Time</div></div>
           <div style={{ minHeight: '200px' }}>
-            {webhooks.length === 0 ? <div className="table-empty"><span>No webhook events</span></div> : webhooks.map(w => (
+            {webhooks.length === 0 ? <div className="table-empty"><span>No webhook events</span></div> : webhooks.slice((whPage - 1) * PER_PAGE, whPage * PER_PAGE).map(w => (
               <div key={w._id} className="wh-row">
                 <div className="cell-id">{w.paymentId.slice(0, 8)}...</div>
                 <div className="cell-key">{w.eventType}</div>
@@ -214,6 +232,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
               </div>
             ))}
           </div>
+          <Pagination page={whPage} total={webhooks.length} perPage={PER_PAGE} onChange={setWhPage} />
         </div>
       ) : (
         <div className="table-container">
@@ -224,7 +243,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
           <div className="table-cols"><div>ID / Time</div><div>Razorpay Order</div><div>Amount</div><div>Status</div><div>Payment ID</div><div></div></div>
           <div style={{ minHeight: '300px' }}>
             {payments.length === 0 ? <div className="table-empty"><WifiOff size={24} /><span>No transactions yet</span></div> : (
-              <AnimatePresence>{payments.map(p => (
+              <AnimatePresence>{payments.slice((txPage - 1) * PER_PAGE, txPage * PER_PAGE).map(p => (
                 <motion.div key={pid(p)} className="table-row" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} onClick={() => setSelected(p)}>
                   <div><div className="cell-id">{pid(p).slice(0, 8)}...</div><div className="cell-time">{new Date(p.createdAt).toLocaleTimeString()}</div></div>
                   <div className="cell-key">{p.razorpayOrderId || '—'}</div>
@@ -236,6 +255,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
               ))}</AnimatePresence>
             )}
           </div>
+          <Pagination page={txPage} total={payments.length} perPage={PER_PAGE} onChange={setTxPage} />
         </div>
       )}
 
@@ -292,6 +312,17 @@ function DR({ l, v, c }: { l: string; v: string; c?: string }) {
 function StatusBadge({ status, retryCount }: { status: string; retryCount: number }) {
   const cls = status === 'PROCESSING' ? 'processing' : status === 'SUCCESS' ? 'success' : status === 'FAILED' ? 'failed' : 'pending';
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><span className={`status-badge ${cls}`}>{status}{status === 'PROCESSING' && <span className="pulse-dot" />}</span>{retryCount > 0 && status !== 'SUCCESS' && <span className="retry-count">×{retryCount}</span>}</span>;
+}
+function Pagination({ page, total, perPage, onChange }: { page: number; total: number; perPage: number; onChange: (p: number) => void }) {
+  const pages = Math.ceil(total / perPage);
+  if (pages <= 1) return null;
+  return (
+    <div className="pagination">
+      <button className="pag-btn" onClick={() => onChange(page - 1)} disabled={page === 1}>← Prev</button>
+      <span className="pag-info">Page {page} of {pages} <span className="pag-count">({total} total)</span></span>
+      <button className="pag-btn" onClick={() => onChange(page + 1)} disabled={page === pages}>Next →</button>
+    </div>
+  );
 }
 
 // ===== SIMULATION PANEL =====

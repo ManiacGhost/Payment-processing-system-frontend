@@ -1,96 +1,231 @@
-# NexusPay — Payment Processing System
+# NexusPay — Scalable Payment Processing Platform
 
-A full-stack payment processor with **Razorpay** integration, **JWT authentication**, **MongoDB** persistence, and resilience patterns (retry, circuit breaker, rate limiting).
+A **production-ready full-stack payment processing system** built with reliability, security, and observability at its core. NexusPay integrates with Razorpay to handle real-world transactions while implementing resilience patterns typically found in high-scale fintech systems.
 
-## Deployment
+---
 
-- **Backend:** Deployed on [Render](https://render.com) → https://payment-processing-system-backend.onrender.com
-- **Frontend:** Ready for [Cloudflare Pages](https://pages.cloudflare.com) deployment
+## 🚀 Overview
 
-📘 See [client/DEPLOYMENT.md](client/DEPLOYMENT.md) for detailed Cloudflare Pages deployment instructions.
+NexusPay is designed as a **fault-tolerant payment orchestration layer** that simulates real-world payment infrastructure challenges such as:
 
-## Project Structure
+- External API failures  
+- Duplicate payment handling  
+- High concurrency scenarios  
+- Webhook reliability  
+- Token-based authentication lifecycle  
+
+---
+
+## 🧱 Architecture
 
 ```
-├── server/           # Express API (port 3001)
+Client (React + Vite)
+        │
+        ▼
+Backend API (Node.js + Express)
+        │
+        ├── Authentication Layer (JWT + Refresh Tokens)
+        ├── Payment Service (Razorpay Integration)
+        ├── Resilience Layer
+        │     ├── Retry + Exponential Backoff
+        │     ├── Circuit Breaker
+        │     ├── Idempotency Guard
+        │     └── Concurrency Locks
+        │
+        ├── Webhook Processor (Signature Verified)
+        │
+        ▼
+Database (MongoDB)
+```
+
+---
+
+## 🌐 Live Deployment
+
+- Backend API: https://payment-processing-system-backend.onrender.com  
+- Frontend: https://payment-processing-system-frontend.pages.dev/
+
+---
+
+## 📦 Tech Stack
+
+### Backend
+- Node.js + Express (TypeScript)
+- MongoDB + Mongoose
+- JWT Authentication
+- Razorpay SDK
+
+### Frontend
+- React + Vite
+- TypeScript
+
+### Infrastructure
+- Render
+- Cloudflare Pages
+
+---
+
+## ⚙️ Core Features
+
+### 🔐 Authentication
+- JWT-based authentication
+- Access tokens (1 hour)
+- Refresh tokens (7 days, rotating)
+
+### 💳 Payments
+- Razorpay order creation
+- Payment verification
+- Failure handling
+
+### 🛡️ Resilience
+
+| Pattern | Description |
+|--------|------------|
+| Retry | Exponential backoff |
+| Circuit Breaker | Opens after 5 failures |
+| Idempotency | Prevents duplicates |
+| Concurrency | Lock-based control |
+| Rate Limiting | 10 req/user/min |
+
+---
+
+### 🔔 Webhooks
+- Signature verification
+- Duplicate handling
+- Audit logging
+
+---
+
+### 📊 Observability
+- Payment event timeline
+- System stats
+- Webhook logs
+
+---
+
+## 📁 Project Structure
+
+```
+├── server/
 │   ├── src/
-│   │   ├── index.ts          # Entry — DB connect, route mount
+│   │   ├── index.ts
 │   │   ├── middleware/
-│   │   │   └── auth.ts       # JWT verification middleware
 │   │   ├── models/
-│   │   │   ├── User.ts       # User model (bcrypt hashed passwords)
-│   │   │   ├── Payment.ts    # Payment model (Razorpay fields)
-│   │   │   └── WebhookLog.ts # Webhook audit log
-│   │   └── routes/
-│   │       ├── auth.ts       # Register, Login, Refresh, Logout
-│   │       ├── payments.ts   # CRUD + Razorpay order/verify
-│   │       └── webhooks.ts   # Webhook handler + system stats
+│   │   ├── routes/
 │   ├── .env
 │   └── package.json
 │
-├── client/           # React + Vite (port 5173)
+├── client/
 │   ├── src/
-│   │   ├── App.tsx           # Auth flow + Dashboard UI
-│   │   ├── api.ts            # Fetch wrapper with JWT auto-refresh
+│   │   ├── App.tsx
+│   │   ├── api.ts
 │   │   ├── types.ts
-│   │   └── index.css
 │   └── package.json
 │
 └── README.md
 ```
 
-## Quick Start
+---
+
+## 🧑‍💻 Getting Started
+
+### Prerequisites
+- Node.js >= 18
+- MongoDB
+- Razorpay account
+
+---
+
+### Environment Variables
+
+Create `.env` in `/server`:
+
+```
+PORT=3001
+MONGO_URI=your_mongodb_connection_string
+
+JWT_ACCESS_SECRET=your_access_secret
+JWT_REFRESH_SECRET=your_refresh_secret
+
+RAZORPAY_KEY_ID=your_key
+RAZORPAY_KEY_SECRET=your_secret
+
+WEBHOOK_SECRET=your_webhook_secret
+```
+
+---
+
+### Run Locally
 
 ```bash
-# Terminal 1 — Backend
+# Backend
 cd server
 npm install
 npm run dev
 
-# Terminal 2 — Frontend
+# Frontend
 cd client
 npm install
 npm run dev
 ```
 
-## Features
+---
 
-| Feature | Details |
-|---|---|
-| **JWT Auth** | Access token (1hr) + refresh token (7d) with rotation |
-| **Razorpay** | Real order creation, checkout, signature verification |
-| **MongoDB** | Persistent storage — survives restarts |
-| **Retry + Backoff** | Exponential backoff on Razorpay API failures |
-| **Circuit Breaker** | Opens after 5 failures, auto-recovers in 15s |
-| **Idempotency** | Unique key prevents duplicate payments |
-| **Concurrency** | Lock-based parallel processing prevention |
-| **Rate Limiting** | 10 requests/user/minute |
-| **Webhooks** | Razorpay webhook with signature verification, duplicate/conflict detection |
-| **Observability** | Per-payment event timeline, system stats, webhook audit log |
+## 📡 API Endpoints
 
-## API Endpoints
+### Auth
 
-### Auth (Public)
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/auth/register` | Create account |
-| POST | `/api/auth/login` | Login, returns JWT tokens |
-| POST | `/api/auth/refresh` | Rotate access + refresh tokens |
-| POST | `/api/auth/logout` | Invalidate refresh token |
-| GET | `/api/auth/me` | Get current user (protected) |
+| Method | Endpoint | Description |
+|--------|----------|------------|
+| POST | /api/auth/register | Register |
+| POST | /api/auth/login | Login |
+| POST | /api/auth/refresh | Refresh token |
+| POST | /api/auth/logout | Logout |
+| GET | /api/auth/me | Current user |
 
-### Payments (Protected — requires Bearer token)
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/payments` | Create Razorpay order |
-| POST | `/api/payments/verify` | Verify payment signature |
-| POST | `/api/payments/:id/fail` | Mark payment as failed |
-| GET | `/api/payments` | List user's payments |
-| GET | `/api/payments/:id` | Payment detail with logs |
+---
 
-### System (Public)
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/webhooks/razorpay` | Razorpay webhook endpoint |
-| GET | `/api/webhooks` | Webhook audit logs |
-| GET | `/api/webhooks/stats` | System statistics |
+### Payments
+
+| Method | Endpoint | Description |
+|--------|----------|------------|
+| POST | /api/payments | Create order |
+| POST | /api/payments/verify | Verify payment |
+| POST | /api/payments/:id/fail | Mark failed |
+| GET | /api/payments | List payments |
+| GET | /api/payments/:id | Payment detail |
+
+---
+
+### System
+
+| Method | Endpoint | Description |
+|--------|----------|------------|
+| POST | /api/webhooks/razorpay | Webhook |
+| GET | /api/webhooks | Logs |
+| GET | /api/webhooks/stats | Metrics |
+
+---
+
+## 🔄 Payment Flow
+
+1. Create order  
+2. Complete payment  
+3. Verify signature  
+4. Receive webhook  
+5. Store final state  
+
+---
+
+## 🧪 Testing Ideas
+
+- Simulate API failures  
+- Test duplicate webhooks  
+- Validate rate limits  
+- Check token expiry flow  
+
+---
+
+## 📄 License
+
+MIT
