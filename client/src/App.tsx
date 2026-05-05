@@ -200,11 +200,26 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
         <button className={`tab ${tab === 'simulate' ? 'active' : ''}`} onClick={() => setTab('simulate')}>Simulate</button>
       </div>
 
-      {tab === 'payments' ? (
+      {tab === 'webhooks' ? (
+        <div className="table-container">
+          <div className="table-header"><h2 className="table-title">Webhook Log</h2></div>
+          <div className="wh-cols"><div>Payment</div><div>Event</div><div>Result</div><div>Time</div></div>
+          <div style={{ minHeight: '200px' }}>
+            {webhooks.length === 0 ? <div className="table-empty"><span>No webhook events</span></div> : webhooks.map(w => (
+              <div key={w._id} className="wh-row">
+                <div className="cell-id">{w.paymentId.slice(0, 8)}...</div>
+                <div className="cell-key">{w.eventType}</div>
+                <div><span className={`status-badge ${w.result === 'PROCESSED' ? 'success' : w.result === 'IGNORED' ? 'pending' : 'failed'}`}>{w.result}</span></div>
+                <div className="cell-time">{new Date(w.createdAt).toLocaleTimeString()}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
         <div className="table-container">
           <div className="table-header">
             <h2 className="table-title">Transaction Stream</h2>
-            <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={14} /> New Payment</button>
+            {tab === 'payments' && <button className="btn-primary" onClick={() => setIsModalOpen(true)}><Plus size={14} /> New Payment</button>}
           </div>
           <div className="table-cols"><div>ID / Time</div><div>Razorpay Order</div><div>Amount</div><div>Status</div><div>Payment ID</div><div></div></div>
           <div style={{ minHeight: '300px' }}>
@@ -222,24 +237,9 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
             )}
           </div>
         </div>
-      ) : (
-        <div className="table-container">
-          <div className="table-header"><h2 className="table-title">Webhook Log</h2></div>
-          <div className="wh-cols"><div>Payment</div><div>Event</div><div>Result</div><div>Time</div></div>
-          <div style={{ minHeight: '200px' }}>
-            {webhooks.length === 0 ? <div className="table-empty"><span>No webhook events</span></div> : webhooks.map(w => (
-              <div key={w._id} className="wh-row">
-                <div className="cell-id">{w.paymentId.slice(0, 8)}...</div>
-                <div className="cell-key">{w.eventType}</div>
-                <div><span className={`status-badge ${w.result === 'PROCESSED' ? 'success' : w.result === 'IGNORED' ? 'pending' : 'failed'}`}>{w.result}</span></div>
-                <div className="cell-time">{new Date(w.createdAt).toLocaleTimeString()}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
 
-      {tab === 'simulate' && <SimulationPanel onRefresh={fetchData} />}
+      {tab === 'simulate' && <div style={{ marginTop: '1.75rem' }}><SimulationPanel onRefresh={fetchData} /></div>}
 
       <footer className="footer"><div>NexusPay v1.0 — JWT Auth + Razorpay</div><div style={{ display: 'flex', gap: '1.5rem' }}><span>Active: {stats?.activeProcessing ?? 0}</span><span>Total: {stats?.totalPayments ?? 0}</span></div></footer>
 
