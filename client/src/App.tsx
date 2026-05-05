@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, RefreshCcw, CheckCircle2, ArrowRight, ShieldCheck, Zap, Activity,
   History, AlertCircle, X, Wifi, WifiOff, Loader2, LogIn, UserPlus, Mail, Lock, User,
-  Play, Layers, GitBranch, Cpu, Server, RotateCcw as RotateCcwIcon
+  Play, Layers, GitBranch, Cpu, Server, RotateCcw as RotateCcwIcon, Webhook
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Payment, SystemStats, WebhookLogEntry, AuthUser } from './types';
@@ -250,7 +250,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
             <div className="modal-title-row"><h3 className="modal-title">Initiate Payment</h3><button className="btn-close" onClick={() => setIsModalOpen(false)}><X size={18} /></button></div>
             <form onSubmit={handlePay}>
               <div className="form-group"><label className="form-label">Amount (INR)</label><input type="number" step="1" min="1" value={amount} onChange={e => setAmount(e.target.value)} className="form-input" autoFocus /></div>
-              <div className="info-box"><div className="info-box-title"><AlertCircle size={12} /> Test Mode</div><p>Use card <strong>4111 1111 1111 1111</strong>, any future expiry, any CVV.</p></div>
+              <div className="info-box"><div className="info-box-title"><AlertCircle size={12} /> Test Mode</div><p>Domestic: <strong>5267 3181 8797 5449</strong> (Mastercard) &nbsp;·&nbsp; International: <strong>4111 1111 1111 1111</strong> (Visa — enable in Razorpay Dashboard → Settings → Payment Methods → International). Any future expiry, any CVV.</p></div>
               <button type="submit" className="btn-submit" disabled={submitting}>{submitting ? <><Loader2 size={14} className="spinner" /> Creating...</> : 'Pay with Razorpay'}</button>
             </form>
           </motion.div>
@@ -443,6 +443,45 @@ function SimulationPanel({ onRefresh }: { onRefresh: () => void }) {
     }
   });
 
+  // ── Webhook edge cases ────────────────────────────────────────────────────
+  const simWebhookEarly = () => runSim('wh_early', async () => {
+    addLog('wh_early', 'Firing webhook for a non-existent order...');
+    const r = await apiFetch('/api/simulate/webhook/early', { method: 'POST', body: JSON.stringify({}) });
+    const d = await r.json();
+    if (r.ok) {
+      addLog('wh_early', `${r.status}: ${d.message || 'Early callback fired'}`, 'success');
+      addLog('wh_early', 'Result logged as IGNORED/UNKNOWN — check Webhook Log tab', 'info');
+    } else {
+      addLog('wh_early', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
+  const simWebhookDuplicate = () => runSim('wh_dup', async () => {
+    addLog('wh_dup', 'Creating payment and firing same webhook event twice...');
+    const r = await apiFetch('/api/simulate/webhook/duplicate', { method: 'POST', body: JSON.stringify({}) });
+    const d = await r.json();
+    if (r.ok) {
+      addLog('wh_dup', `${r.status}: ${d.message || 'Duplicate webhook fired'}`, 'success');
+      addLog('wh_dup', 'Event 1 → PROCESSED, Event 2 → IGNORED via deduplication', 'info');
+      addLog('wh_dup', 'Check Webhook Log tab for both entries', 'info');
+    } else {
+      addLog('wh_dup', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
+  const simWebhookConflict = () => runSim('wh_conflict', async () => {
+    addLog('wh_conflict', 'Creating FAILED payment then firing payment.captured webhook...');
+    const r = await apiFetch('/api/simulate/webhook/conflict', { method: 'POST', body: JSON.stringify({}) });
+    const d = await r.json();
+    if (r.ok) {
+      addLog('wh_conflict', `${r.status}: ${d.message || 'Conflict webhook fired'}`, 'success');
+      addLog('wh_conflict', 'Payment state NOT overwritten — logged as CONFLICT', 'warn');
+      addLog('wh_conflict', 'Check Webhook Log tab for the CONFLICT entry', 'info');
+    } else {
+      addLog('wh_conflict', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
   const SCENARIOS = ['success', 'failure', 'timeout', 'network_error', 'partial_failure', 'random'];
 
   return (
@@ -521,6 +560,22 @@ function SimulationPanel({ onRefresh }: { onRefresh: () => void }) {
         description="Fetches GET /api/payments/queue/stats — shows live queue length and last 200 job history entries with attempt counts and backoff status."
         onRun={simQueueStats} running={!!running['queue']} logs={logs['queue'] || []}
         extra={queueStats && <QueueJobTable data={queueStats} />} />
+
+      {/* Webhook Edge Cases */}
+      <SimCard id="wh_early" title="Webhook: Early Callback" color="#74b9ff"
+        icon={<Webhook size={16} />}
+        description="Fires a webhook for an order_id that doesn't exist in the DB yet. Logged as IGNORED/UNKNOWN — visible in the Webhook Log tab."
+        onRun={simWebhookEarly} running={!!running['wh_early']} logs={logs['wh_early'] || []} />
+
+      <SimCard id="wh_dup" title="Webhook: Duplicate Callback" color="#a29bfe"
+        icon={<Webhook size={16} />}
+        description="Creates a payment and fires the same webhook event twice. First → PROCESSED, second → IGNORED via deduplication. Both visible in Webhook Log."
+        onRun={simWebhookDuplicate} running={!!running['wh_dup']} logs={logs['wh_dup'] || []} />
+
+      <SimCard id="wh_conflict" title="Webhook: Conflicting Callback" color="var(--warning)"
+        icon={<Webhook size={16} />}
+        description="Creates a FAILED payment then fires payment.captured for it. Payment state is NOT overwritten — logged as CONFLICT in the Webhook Log."
+        onRun={simWebhookConflict} running={!!running['wh_conflict']} logs={logs['wh_conflict'] || []} />
     </div>
   );
 }

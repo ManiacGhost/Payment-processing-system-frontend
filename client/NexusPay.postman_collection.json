@@ -1,8 +1,8 @@
 {
   "info": {
     "name": "NexusPay API",
-    "_postman_id": "nexuspay-collection-v1",
-    "description": "Complete API collection for NexusPay Payment Processing System.\n\n**Setup:**\n1. Set the `baseUrl` variable to your Render URL (e.g. https://your-app.onrender.com)\n2. Register or login to get a token\n3. The `authToken` variable is set automatically after login/register\n\n**Simulation Scenarios:**\n- `success` — processes immediately\n- `failure` — gateway declines\n- `timeout` — hangs 11s (tests timeout handling)\n- `network_error` — connection refused\n- `partial_failure` — fails 2x then succeeds (tests retry)\n- `random` — weighted random mix",
+    "_postman_id": "nexuspay-collection-v2",
+    "description": "Complete API collection for NexusPay Payment Processing System.\n\n**Setup:**\n1. `baseUrl` is pre-filled with the Render URL\n2. Run Register or Login — `authToken` is saved automatically\n3. All protected requests use `{{authToken}}` automatically\n\n**Simulation Scenarios:** success | failure | timeout | network_error | partial_failure | random",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -52,7 +52,7 @@
               "mode": "raw",
               "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
             },
-            "description": "Register a new user. Automatically saves `authToken` to collection variables."
+            "description": "Register a new user. Automatically saves accessToken to {{authToken}}."
           }
         },
         {
@@ -80,7 +80,7 @@
               "mode": "raw",
               "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
             },
-            "description": "Login and get access token. Automatically saves `authToken`."
+            "description": "Login and get access token. Automatically saves accessToken to {{authToken}}."
           }
         },
         {
@@ -152,7 +152,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\",\n  \"idempotencyKey\": \"order_{{$randomUUID}}\",\n  \"metadata\": { \"description\": \"Test payment\" }\n}"
             },
-            "description": "Create a real Razorpay order. Returns `razorpayOrderId` needed to open Razorpay checkout on frontend."
+            "description": "Create a real Razorpay order. Returns razorpayOrderId for frontend checkout."
           }
         },
         {
@@ -217,7 +217,7 @@
       ]
     },
     {
-      "name": "Simulation",
+      "name": "Gateway Simulation",
       "item": [
         {
           "name": "Get All Scenarios",
@@ -241,7 +241,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\",\n  \"scenario\": \"success\"\n}"
             },
-            "description": "Simulates a successful payment with 100–600ms delay."
+            "description": "Gateway processes payment successfully with 100–600ms delay."
           }
         },
         {
@@ -257,7 +257,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\",\n  \"scenario\": \"failure\"\n}"
             },
-            "description": "Simulates a gateway decline (FAILED status)."
+            "description": "Gateway declines the payment — payment saved as FAILED."
           }
         },
         {
@@ -273,7 +273,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\",\n  \"scenario\": \"timeout\"\n}"
             },
-            "description": "Simulates gateway timeout (hangs 11 seconds). Tests timeout handling."
+            "description": "Gateway hangs for 11 seconds — tests timeout handling. Response will be slow."
           }
         },
         {
@@ -293,7 +293,7 @@
           }
         },
         {
-          "name": "Simulate — Partial Failure (Retry Demo)",
+          "name": "Simulate — Partial Failure (Inline Retry)",
           "request": {
             "method": "POST",
             "header": [
@@ -305,7 +305,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\",\n  \"scenario\": \"partial_failure\"\n}"
             },
-            "description": "Fails on attempts 1 and 2, succeeds on attempt 3. Demonstrates retry logic inline."
+            "description": "Fails attempts 1 and 2, succeeds on attempt 3. Demonstrates inline retry with exponential backoff."
           }
         },
         {
@@ -337,7 +337,7 @@
               "mode": "raw",
               "raw": "{\n  \"amount\": 500,\n  \"currency\": \"INR\"\n}"
             },
-            "description": "Returns 202 immediately. Enqueues a partial_failure job in the RetryQueue. Poll GET /api/payments/:id to watch the status change from PENDING → SUCCESS after ~3 retry attempts."
+            "description": "Returns 202 immediately. Enqueues job in RetryQueue with partial_failure scenario. Poll GET /api/payments/:id to watch PENDING → SUCCESS after ~3 retries with exponential backoff."
           }
         },
         {
@@ -353,7 +353,7 @@
               "mode": "raw",
               "raw": "{\n  \"failures\": 6\n}"
             },
-            "description": "Fires 6 rapid failures to trip the circuit breaker into OPEN state. Check `circuitBreaker.state` in response."
+            "description": "Fires 6 rapid failures to trip the circuit breaker to OPEN state. Check circuitBreaker.state in response."
           }
         },
         {
@@ -367,6 +367,50 @@
             "url": "{{baseUrl}}/api/simulate/circuit-breaker/reset",
             "body": { "mode": "raw", "raw": "{}" },
             "description": "Resets the circuit breaker back to CLOSED state."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Webhook Edge Cases",
+      "item": [
+        {
+          "name": "Simulate — Early Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/simulate/webhook/early",
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "Fires a webhook for an order_id that doesn't exist in the DB yet. Shows early callback handling — logged as IGNORED/UNKNOWN. Real handler returns 404 so Razorpay retries automatically."
+          }
+        },
+        {
+          "name": "Simulate — Duplicate Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/simulate/webhook/duplicate",
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "Creates a payment and fires the same webhook event twice. First event is PROCESSED, second is IGNORED via deduplication check on WebhookLog collection."
+          }
+        },
+        {
+          "name": "Simulate — Conflicting Callback",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/api/simulate/webhook/conflict",
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "Creates a FAILED payment then fires a payment.captured webhook for it. Payment state is NOT overwritten — logged as CONFLICT in WebhookLog."
           }
         }
       ]
@@ -402,7 +446,7 @@
               "mode": "raw",
               "raw": "{\n  \"event\": \"payment.captured\",\n  \"payload\": {\n    \"payment\": {\n      \"entity\": {\n        \"id\": \"pay_test_manual_001\",\n        \"order_id\": \"order_REPLACE_WITH_REAL_ORDER_ID\",\n        \"status\": \"captured\",\n        \"amount\": 50000\n      }\n    }\n  }\n}"
             },
-            "description": "Manually fire a webhook event (no signature required for testing). Replace `order_id` with a real order ID from your DB to see PROCESSED result."
+            "description": "Manually fire a webhook event (no signature needed for testing). Replace order_id with a real ID from your DB to get PROCESSED result."
           }
         }
       ]
