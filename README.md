@@ -2,6 +2,13 @@
 
 A full-stack payment processor with **Razorpay** integration, **JWT authentication**, **MongoDB** persistence, and resilience patterns (retry, circuit breaker, rate limiting).
 
+## Deployment
+
+- **Backend:** Deployed on [Render](https://render.com) → https://payment-processing-system-backend.onrender.com
+- **Frontend:** Ready for [Cloudflare Pages](https://pages.cloudflare.com) deployment
+
+📘 See [client/DEPLOYMENT.md](client/DEPLOYMENT.md) for detailed Cloudflare Pages deployment instructions.
+
 ## Project Structure
 
 ```
