@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, RefreshCcw, CheckCircle2, ArrowRight, ShieldCheck, Zap, Activity,
-  History, AlertCircle, X, Wifi, WifiOff, Loader2, LogIn, UserPlus, Mail, Lock, User
+  History, AlertCircle, X, Wifi, WifiOff, Loader2, LogIn, UserPlus, Mail, Lock, User,
+  Play, Layers, GitBranch, Cpu, Server, RotateCcw as RotateCcwIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Payment, SystemStats, WebhookLogEntry, AuthUser } from './types';
@@ -100,7 +101,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
   const [amount, setAmount] = useState('100');
   const [submitting, setSubmitting] = useState(false);
   const [selected, setSelected] = useState<Payment | null>(null);
-  const [tab, setTab] = useState<'payments' | 'webhooks'>('payments');
+  const [tab, setTab] = useState<'payments' | 'webhooks' | 'simulate'>('payments');
 
   const fetchData = useCallback(async () => {
     try {
@@ -196,6 +197,7 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
       <div className="tabs">
         <button className={`tab ${tab === 'payments' ? 'active' : ''}`} onClick={() => setTab('payments')}>Transactions</button>
         <button className={`tab ${tab === 'webhooks' ? 'active' : ''}`} onClick={() => setTab('webhooks')}>Webhooks</button>
+        <button className={`tab ${tab === 'simulate' ? 'active' : ''}`} onClick={() => setTab('simulate')}>Simulate</button>
       </div>
 
       {tab === 'payments' ? (
@@ -236,6 +238,8 @@ function Dashboard({ user, onLogout }: { user: AuthUser; onLogout: () => void })
           </div>
         </div>
       )}
+
+      {tab === 'simulate' && <SimulationPanel onRefresh={fetchData} />}
 
       <footer className="footer"><div>NexusPay v1.0 — JWT Auth + Razorpay</div><div style={{ display: 'flex', gap: '1.5rem' }}><span>Active: {stats?.activeProcessing ?? 0}</span><span>Total: {stats?.totalPayments ?? 0}</span></div></footer>
 
@@ -288,4 +292,281 @@ function DR({ l, v, c }: { l: string; v: string; c?: string }) {
 function StatusBadge({ status, retryCount }: { status: string; retryCount: number }) {
   const cls = status === 'PROCESSING' ? 'processing' : status === 'SUCCESS' ? 'success' : status === 'FAILED' ? 'failed' : 'pending';
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}><span className={`status-badge ${cls}`}>{status}{status === 'PROCESSING' && <span className="pulse-dot" />}</span>{retryCount > 0 && status !== 'SUCCESS' && <span className="retry-count">×{retryCount}</span>}</span>;
+}
+
+// ===== SIMULATION PANEL =====
+interface SimLog { msg: string; type: 'info' | 'success' | 'error' | 'warn'; ts: string; }
+
+function SimulationPanel({ onRefresh }: { onRefresh: () => void }) {
+  const [logs, setLogs] = useState<Record<string, SimLog[]>>({});
+  const [running, setRunning] = useState<Record<string, boolean>>({});
+  const [queueStats, setQueueStats] = useState<any>(null);
+  const [scenario, setScenario] = useState<string>('success');
+
+  const addLog = (id: string, msg: string, type: SimLog['type'] = 'info') =>
+    setLogs(prev => ({ ...prev, [id]: [...(prev[id] || []), { msg, type, ts: new Date().toLocaleTimeString() }] }));
+
+  const runSim = async (id: string, fn: () => Promise<void>) => {
+    setRunning(prev => ({ ...prev, [id]: true }));
+    setLogs(prev => ({ ...prev, [id]: [] }));
+    try { await fn(); } catch (e: any) { addLog(id, `Unexpected: ${e.message}`, 'error'); }
+    setRunning(prev => ({ ...prev, [id]: false }));
+    onRefresh();
+  };
+
+  // ── Idempotency: replay same key twice → 409 ──────────────────────────────
+  const simIdempotency = () => runSim('idemp', async () => {
+    const key = `idemp_sim_${Date.now()}`;
+    addLog('idemp', `Using idempotency key: ${key}`);
+    const r1 = await apiFetch('/api/payments', { method: 'POST', body: JSON.stringify({ amount: 1, currency: 'INR', idempotencyKey: key, metadata: { sim: 'idempotency' } }) });
+    const d1 = await r1.json();
+    if (r1.ok || r1.status === 202) addLog('idemp', `Request 1 → ${r1.status}: Payment ${((d1.payment?._id || d1.payment?.id) ?? '').toString().slice(0, 8)} created`, 'success');
+    else { addLog('idemp', `Request 1 → ${r1.status}: ${d1.error}`, 'error'); return; }
+    addLog('idemp', `Replaying exact same key...`);
+    const r2 = await apiFetch('/api/payments', { method: 'POST', body: JSON.stringify({ amount: 1, currency: 'INR', idempotencyKey: key, metadata: { sim: 'idempotency' } }) });
+    const d2 = await r2.json();
+    if (r2.status === 409) addLog('idemp', `Request 2 → 409 Conflict — Duplicate blocked ✓`, 'success');
+    else addLog('idemp', `Request 2 → ${r2.status}: ${d2.error || JSON.stringify(d2)}`, r2.ok ? 'warn' : 'error');
+  });
+
+  // ── Concurrent burst: 4 simultaneous payments ─────────────────────────────
+  const simConcurrent = () => runSim('concurrent', async () => {
+    addLog('concurrent', 'Firing 4 simultaneous requests via Promise.all...');
+    const ts = Date.now();
+    const results = await Promise.all(
+      Array.from({ length: 4 }, (_, i) =>
+        apiFetch('/api/payments', { method: 'POST', body: JSON.stringify({ amount: 1, currency: 'INR', idempotencyKey: `conc_${ts}_${i}`, metadata: { sim: 'concurrency' } }) })
+          .then(async r => ({ status: r.status, data: await r.json() }))
+      )
+    );
+    results.forEach((r, i) => {
+      const id = ((r.data.payment?._id || r.data.payment?.id) ?? '').toString().slice(0, 8);
+      if (r.status < 300 || r.status === 202)
+        addLog('concurrent', `Request ${i + 1} → ${r.status}: ${id || 'queued'}`, 'success');
+      else
+        addLog('concurrent', `Request ${i + 1} → ${r.status}: ${r.data.error || 'see logs'}`, r.status === 429 ? 'warn' : 'error');
+    });
+    addLog('concurrent', 'All 4 settled — check Transaction Stream', 'info');
+  });
+
+  // ── Rate limit: 12 rapid requests vs 10/min window ───────────────────────
+  const simRateLimit = () => runSim('ratelimit', async () => {
+    addLog('ratelimit', 'Sending 12 rapid requests (server limit: 10/min)...');
+    let passed = 0, blocked = 0;
+    const ts = Date.now();
+    for (let i = 0; i < 12; i++) {
+      const r = await apiFetch('/api/payments', { method: 'POST', body: JSON.stringify({ amount: 1, currency: 'INR', idempotencyKey: `rl_${ts}_${i}`, metadata: { sim: 'ratelimit' } }) });
+      if (r.status === 429) { blocked++; addLog('ratelimit', `#${i + 1} → 429 Too Many Requests ✓`, 'warn'); }
+      else { passed++; addLog('ratelimit', `#${i + 1} → ${r.status} Accepted`, 'success'); }
+    }
+    addLog('ratelimit', `Done — ${passed} accepted, ${blocked} rate-limited`, blocked > 0 ? 'success' : 'warn');
+    if (blocked === 0) addLog('ratelimit', 'Note: window may have reset — try again immediately', 'info');
+  });
+
+  // ── Payment scenarios: POST /api/simulate/payment ─────────────────────────
+  const simScenario = () => runSim('scenario', async () => {
+    addLog('scenario', `Running scenario: ${scenario}...`);
+    const r = await apiFetch('/api/simulate/payment', { method: 'POST', body: JSON.stringify({ amount: 500, currency: 'INR', scenario }) });
+    const d = await r.json();
+    if (r.ok || r.status === 202) {
+      const st = d.payment?.status ?? d.status ?? 'unknown';
+      const id = ((d.payment?._id || d.payment?.id) ?? '').toString().slice(0, 8);
+      const retries = d.payment?.retryCount ?? d.retryCount ?? 0;
+      addLog('scenario', `Status: ${st} ${id ? `| ID: ${id}` : ''}${retries ? ` | Retries: ${retries}` : ''}`, st === 'SUCCESS' ? 'success' : st === 'FAILED' ? 'error' : 'warn');
+      if (d.message) addLog('scenario', d.message, 'info');
+    } else {
+      addLog('scenario', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
+  // ── Async queue retry: POST /api/simulate/payment/retry ──────────────────
+  const simQueueRetry = () => runSim('queueretry', async () => {
+    addLog('queueretry', 'Enqueuing async retry job (partial_failure scenario)...');
+    const r = await apiFetch('/api/simulate/payment/retry', { method: 'POST', body: JSON.stringify({ amount: 500, currency: 'INR' }) });
+    const d = await r.json();
+    if (r.status === 202) {
+      const id = ((d.payment?._id || d.payment?.id) ?? '').toString().slice(0, 8);
+      addLog('queueretry', `202 Accepted — Payment ${id} queued`, 'success');
+      addLog('queueretry', 'Backoff: fail×2 → succeed on attempt 3', 'info');
+      addLog('queueretry', 'Poll "Retry Queue Inspector" to watch job progress', 'info');
+    } else {
+      addLog('queueretry', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
+  // ── Circuit breaker: POST /api/simulate/circuit-breaker ──────────────────
+  const simCircuitTrip = () => runSim('circuit', async () => {
+    addLog('circuit', 'Sending 6 failures to POST /api/simulate/circuit-breaker...');
+    addLog('circuit', 'Threshold: 5 failures → OPEN');
+    const r = await apiFetch('/api/simulate/circuit-breaker', { method: 'POST', body: JSON.stringify({ failures: 6 }) });
+    const d = await r.json();
+    if (r.ok) {
+      const state = d.circuitBreaker?.state ?? d.state ?? 'unknown';
+      addLog('circuit', `Circuit state → ${state}`, state === 'OPEN' ? 'error' : 'warn');
+      if (d.message) addLog('circuit', d.message, 'info');
+      addLog('circuit', 'Watch the Circuit Breaker stat card above ↑', 'success');
+    } else {
+      addLog('circuit', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
+  const simCircuitReset = () => runSim('circuit', async () => {
+    addLog('circuit', 'Resetting circuit breaker → CLOSED...');
+    const r = await apiFetch('/api/simulate/circuit-breaker/reset', { method: 'POST', body: JSON.stringify({}) });
+    const d = await r.json();
+    if (r.ok) {
+      const state = d.circuitBreaker?.state ?? d.state ?? 'CLOSED';
+      addLog('circuit', `Circuit reset → ${state} ✓`, 'success');
+    } else {
+      addLog('circuit', `${r.status}: ${d.error || JSON.stringify(d)}`, 'error');
+    }
+  });
+
+  // ── Queue stats: GET /api/payments/queue/stats ────────────────────────────
+  const simQueueStats = () => runSim('queue', async () => {
+    addLog('queue', 'Fetching /api/payments/queue/stats...');
+    const r = await apiFetch('/api/payments/queue/stats');
+    if (!r.ok) { addLog('queue', `Error ${r.status} — endpoint unavailable`, 'error'); return; }
+    const data = await r.json();
+    setQueueStats(data);
+    const history: any[] = data.history ?? data.jobs ?? [];
+    addLog('queue', `Active queue length: ${data.queueLength ?? data.pending ?? 0}`, 'info');
+    addLog('queue', `Job history: ${history.length} entries`, 'info');
+    if (history.length > 0) {
+      const counts: Record<string, number> = {};
+      history.forEach((j: any) => { counts[j.status] = (counts[j.status] || 0) + 1; });
+      Object.entries(counts).forEach(([k, v]) =>
+        addLog('queue', `  ${k}: ${v} job(s)`, k === 'success' ? 'success' : k === 'failed' ? 'error' : 'info')
+      );
+    } else {
+      addLog('queue', 'No jobs yet — run Queue Retry to enqueue one', 'warn');
+    }
+  });
+
+  const SCENARIOS = ['success', 'failure', 'timeout', 'network_error', 'partial_failure', 'random'];
+
+  return (
+    <div className="sim-grid">
+      {/* Payment Scenarios */}
+      <div className="sim-card" style={{ '--sim-color': 'var(--accent)' } as React.CSSProperties}>
+        <div className="sim-card-header">
+          <span className="sim-icon" style={{ color: 'var(--accent)' }}><Play size={16} /></span>
+          <span className="sim-title">Payment Scenarios</span>
+          <button className="sim-run-btn" onClick={simScenario} disabled={!!running['scenario']} style={{ color: 'var(--accent)', borderColor: 'var(--accent)' }}>
+            {running['scenario'] ? <><Loader2 size={11} className="spinner" /> Running</> : <><Play size={11} /> Run</>}
+          </button>
+        </div>
+        <p className="sim-desc">Runs a controlled scenario via <code>/api/simulate/payment</code>. Select a scenario to see how the backend handles each case end-to-end.</p>
+        <div className="sim-scenario-row">
+          {SCENARIOS.map(s => (
+            <button key={s} className={`sim-scenario-btn ${scenario === s ? 'active' : ''}`} onClick={() => setScenario(s)}>{s}</button>
+          ))}
+        </div>
+        {logs['scenario']?.length > 0 && (
+          <div className="sim-log">
+            {logs['scenario'].map((l, i) => <div key={i} className={`sim-line sim-${l.type}`}><span className="sim-ts">{l.ts}</span><span>{l.msg}</span></div>)}
+          </div>
+        )}
+      </div>
+
+      {/* Async Queue Retry */}
+      <SimCard id="queueretry" title="Async Queue Retry" color="var(--success)"
+        icon={<RotateCcwIcon size={16} />}
+        description="Calls POST /api/simulate/payment/retry → 202 Accepted immediately. Backend enqueues a partial_failure job: fails attempts 1 & 2, succeeds on attempt 3 with exponential backoff."
+        onRun={simQueueRetry} running={!!running['queueretry']} logs={logs['queueretry'] || []} />
+
+      {/* Circuit Breaker */}
+      <div className="sim-card" style={{ '--sim-color': 'var(--danger)' } as React.CSSProperties}>
+        <div className="sim-card-header">
+          <span className="sim-icon" style={{ color: 'var(--danger)' }}><Server size={16} /></span>
+          <span className="sim-title">Circuit Breaker</span>
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <button className="sim-run-btn" onClick={simCircuitTrip} disabled={!!running['circuit']} style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+              {running['circuit'] ? <><Loader2 size={11} className="spinner" /> Running</> : <><Play size={11} /> Trip</>}
+            </button>
+            <button className="sim-run-btn" onClick={simCircuitReset} disabled={!!running['circuit']} style={{ color: 'var(--success)', borderColor: 'var(--success)' }}>
+              Reset
+            </button>
+          </div>
+        </div>
+        <p className="sim-desc">Trip: calls <code>/api/simulate/circuit-breaker</code> with 6 failures — opens circuit after threshold of 5. Reset: restores CLOSED state immediately.</p>
+        {logs['circuit']?.length > 0 && (
+          <div className="sim-log">
+            {logs['circuit'].map((l, i) => <div key={i} className={`sim-line sim-${l.type}`}><span className="sim-ts">{l.ts}</span><span>{l.msg}</span></div>)}
+          </div>
+        )}
+      </div>
+
+      {/* Idempotency */}
+      <SimCard id="idemp" title="Idempotency Guard" color="var(--processing)"
+        icon={<Layers size={16} />}
+        description="Creates a payment, then replays the exact same idempotency key. The second request must return 409 Conflict — duplicate prevention in action."
+        onRun={simIdempotency} running={!!running['idemp']} logs={logs['idemp'] || []} />
+
+      {/* Concurrency */}
+      <SimCard id="concurrent" title="Concurrent Burst" color="#a29bfe"
+        icon={<GitBranch size={16} />}
+        description="Fires 4 payments simultaneously via Promise.all. Concurrency locks on the backend prevent the same idempotency key from being double-processed under parallel load."
+        onRun={simConcurrent} running={!!running['concurrent']} logs={logs['concurrent'] || []} />
+
+      {/* Rate Limit */}
+      <SimCard id="ratelimit" title="Rate Limit Probe" color="var(--warning)"
+        icon={<Cpu size={16} />}
+        description="Sends 12 sequential requests against the configurable 10 req/min sliding window. Requests 11–12 should receive 429 Too Many Requests."
+        onRun={simRateLimit} running={!!running['ratelimit']} logs={logs['ratelimit'] || []} />
+
+      {/* Queue Stats */}
+      <SimCard id="queue" title="Retry Queue Inspector" color="#fd79a8"
+        icon={<Activity size={16} />}
+        description="Fetches GET /api/payments/queue/stats — shows live queue length and last 200 job history entries with attempt counts and backoff status."
+        onRun={simQueueStats} running={!!running['queue']} logs={logs['queue'] || []}
+        extra={queueStats && <QueueJobTable data={queueStats} />} />
+    </div>
+  );
+}
+
+function SimCard({ title, description, icon, color, onRun, running, logs, extra }: {
+  id: string; title: string; description: string; icon: React.ReactNode;
+  color: string; onRun: () => void; running: boolean; logs: SimLog[]; extra?: React.ReactNode;
+}) {
+  return (
+    <div className="sim-card" style={{ '--sim-color': color } as React.CSSProperties}>
+      <div className="sim-card-header">
+        <span className="sim-icon" style={{ color }}>{icon}</span>
+        <span className="sim-title">{title}</span>
+        <button className="sim-run-btn" onClick={onRun} disabled={running} style={{ color, borderColor: color }}>
+          {running ? <><Loader2 size={11} className="spinner" /> Running</> : <><Play size={11} /> Run</>}
+        </button>
+      </div>
+      <p className="sim-desc">{description}</p>
+      {(logs.length > 0 || extra) && (
+        <div className="sim-log">
+          {logs.map((l, i) => (
+            <div key={i} className={`sim-line sim-${l.type}`}>
+              <span className="sim-ts">{l.ts}</span>
+              <span>{l.msg}</span>
+            </div>
+          ))}
+          {extra}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QueueJobTable({ data }: { data: any }) {
+  const history: any[] = data.history ?? data.jobs ?? [];
+  if (!history.length) return null;
+  return (
+    <div className="sim-queue-table">
+      <div className="sim-queue-header"><span>Job / Payment</span><span>Attempt</span><span>Status</span></div>
+      {history.slice(0, 10).map((j: any, i: number) => (
+        <div key={i} className="sim-queue-row">
+          <span className="cell-id">{(j.id ?? j.paymentId ?? '').toString().slice(0, 8)}…</span>
+          <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--mono)', fontSize: '0.65rem' }}>{j.attempt}/{j.maxAttempts}</span>
+          <span className={`status-badge ${j.status === 'success' ? 'success' : j.status === 'failed' ? 'failed' : 'processing'}`}>{j.status}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
